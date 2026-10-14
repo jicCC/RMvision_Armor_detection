@@ -1,0 +1,4 @@
+build/
+*.avi
+result_*.jpg
+.vscode/
