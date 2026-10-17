@@ -3,14 +3,10 @@
 #include <vector>
 #include <opencv2/opencv.hpp>
 #include <openvino/openvino.hpp>
+#include "types.hpp"
 
-struct Detection 
-{
-    int   cls;                      // 模型认为的类别序号（先别查 label.txt）
-    float score;                    // 这个类别的分数
-    cv::Rect2f box;                 // 框，给 NMS 用
-    std::vector<cv::Point2f> kpt;   // 4 个角点，原图坐标（PnP 要用的）
-};
+
+
 
 class YoloDetector
 {

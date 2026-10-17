@@ -63,10 +63,16 @@ std::vector<Detection> YoloDetector::detect(const cv::Mat& img)
         if (score < CONF_THRESHOLD) continue;
 
         // (2) 取 4 个角点，映射回原图坐标（存小数）
+        //     模型原始关键点顺序：0=左上, 1=左下, 2=右下, 3=右上
+        //     统一约定（canonical，见 types.hpp）：0=左上, 1=右上, 2=右下, 3=左下
+        //     所以输出第 n 个角点时要取模型的第 MAP[n] 号关键点
+        const int MAP[4] = {0, 3, 2, 1};
+
         Detection d;
         d.cls   = cls;
         d.score = score;
-        for (int k = 0; k < 4; ++k) {
+        for (int n = 0; n < 4; ++n) {
+            int k = MAP[n];
             float kx = data[(13 + 2 * k) * NUM_ANCHORS + i] * inv_scale;
             float ky = data[(14 + 2 * k) * NUM_ANCHORS + i] * inv_scale;
             d.kpt.push_back(cv::Point2f(kx, ky));
@@ -106,7 +112,7 @@ void YoloDetector::draw(cv::Mat& img, const std::vector<Detection>& dets)
         // 4 个角点连成四边形
         std::vector<cv::Point> pts;
         for (const auto& p : d.kpt) pts.push_back(cv::Point(int(p.x), int(p.y)));
-        cv::polylines(img, pts, true, cv::Scalar(0, 255, 0), 2);
+        cv::polylines(img, pts, true, cv::Scalar(0, 255, 0), 1);
 
         // 先显示类别序号，别去查 label.txt
         std::string text = cv::format("cls=%d  %.2f", d.cls, d.score);
