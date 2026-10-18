@@ -1,4 +1,8 @@
 build/
 *.avi
 result_*.jpg
-.vscode/
+.vscode/build.log
+build.log
+debug_*.png
+debug_*.jpg
+data/test_frame0.jpg
