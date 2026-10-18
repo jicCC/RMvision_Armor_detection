@@ -7,7 +7,7 @@
 | 系统       | Ubuntu 20.04 及以上（本工程在 WSL2 的 Ubuntu 下开发验证） |
 | 编译器      | 支持 C++17                                   |
 | CMake    | ≥ 3.10                                     |
-| OpenCV   | ≥ 4.5（开发时用 4.10.0，需含）                      |
+| OpenCV   | ≥ 4.5（开发时用 4.10.0，需含imgproc / calib3d / videoio / dnn）                      |
 | OpenVINO | ≥2024.x（开发时用2026.4.1）                      |
 
 `CMakeLists.txt` 里用的是 `find_package(OpenCV REQUIRED)` 和 `find_package(OpenVINO REQUIRED)`，
