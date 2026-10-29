@@ -6,3 +6,5 @@ build.log
 debug_*.png
 debug_*.jpg
 data/test_frame0.jpg
+meas.csv
+state.csv

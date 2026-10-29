@@ -267,6 +267,14 @@ static void runVideo(const std::string& in_path,
     cv::Mat frame, frame_u;
     int idx = 0;
 
+    // ---------- 导出量测 CSV（只在神经网络那一遍写）----------
+    FILE* fcsv = nullptr;
+    if (!use_trad)
+    {
+        fcsv = std::fopen("meas.csv", "w");
+        if (fcsv) std::fprintf(fcsv, "frame,x,y,z,ok\n");
+    }
+
     while (cap.read(frame))
     {
         // 畸变校正，之后的处理全在 frame_u 上进行
@@ -328,13 +336,34 @@ static void runVideo(const std::string& in_path,
         if (use_trad) trad.draw(frame_u, dets);
         else          yolo.draw(frame_u, dets);
 
+
+                // ---------- 导出这一帧的量测 ----------
+        if (fcsv)
+        {
+            if (dets.empty())
+            {
+                std::fprintf(fcsv, "%d,0,0,0,0\n", idx);
+            }
+            else
+            {
+                PnpResult rm = solver.solve(dets[0].kpt);
+                if (rm.ok)
+                    std::fprintf(fcsv, "%d,%.6f,%.6f,%.6f,1\n", idx,
+                                 rm.tvec.at<double>(0),
+                                 rm.tvec.at<double>(1),
+                                 rm.tvec.at<double>(2));
+                else
+                    std::fprintf(fcsv, "%d,0,0,0,0\n", idx);
+            }
+        }
+
         writer.write(frame_u);
 
         ++idx;
         if (idx % PROGRESS_EVERY_N == 0)
             std::printf("  已处理 %d / %d 帧\n", idx, total);
     }
-
+    if (fcsv) std::fclose(fcsv);
     writer.release();
     cap.release();
     std::printf("完成: %d 帧 → %s\n", idx, out_path.c_str());
