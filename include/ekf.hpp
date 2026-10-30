@@ -30,6 +30,11 @@ public:
 
     void init(double plate_x, double plate_y, double plate_z,
               double theta, double r, double pos_var);
+
+    // 把朝向平移 dtheta（弧度），并适当放大朝向方差，供分支重收敛使用（此处借鉴sp_25vision开源）
+    void shiftTheta(double dtheta);
+
+
     void predict(double dt);
     bool correct(int j, const cv::Mat& z, const cv::Mat& R);
 

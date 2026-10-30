@@ -307,7 +307,7 @@ int main()
     printf("\n=== 阶段 9c：坐标系约定自检 ===\n");
 
     ImuBuffer imu;
-    if (!imu.load("data/2026-05-20_23-57-31.txt")) return 1;
+    if (!imu.load("data/imu.txt")) return 1;
 
     std::vector<cv::Mat> cam_pts;
     std::vector<double>  stamps;
@@ -486,6 +486,8 @@ int main()
         printf("  板号切换次数 : %d\n", switches);
         printf("  重建次数     : %d\n", reinit);
         printf("  → state.csv 已导出\n");
+        printf("  分支重收敛   : 尝试 %d 次，成功 %d 次\n",
+            tracker.branchTried(), tracker.branchFixes());
     }
 
     printf("\n=== 全部测试结束 ===\n");

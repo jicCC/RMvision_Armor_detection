@@ -64,6 +64,7 @@ int ArmorTracker::update(const std::vector<PlateMeas>& meas, double t)
     if (meas.empty())
     {
         ++miss_;
+        pushNis(false);
         matched_ = -1;
         if (miss_ > kLost) inited_ = false;      //太久没有观测，下次需要重建
         return -1;
@@ -86,19 +87,108 @@ int ArmorTracker::update(const std::vector<PlateMeas>& meas, double t)
 
 
     //门限检验：如果最小的NIS都很大，就直接判定为观测不可用，等同于未观测的效果
-    if (best_d2 > gate_)
+     if (best_d2 > gate_)
     {
         ++miss_;
         matched_ = -1;
-        if (miss_ > kLost) inited_ = false;    //同上，太久没有观测，下次需要重建
+        pushNis(false);
+
+        if (badConverge())
+        {
+            ++branchTried_;
+            if (tryReanchor(meas))
+            {
+                ++branchFixes_;
+                miss_ = 0;
+                return matched_;
+            }
+            nisWin_.clear();        // 试过就清空，避免每帧重试
+        }
+
+        if (miss_ > kLost) inited_ = false; //同上，太久没有观测，下次需要重建
         return -1;
     }
 
 
     //更新
+    pushNis(true);
     ekf_.correct(best_j, meas[best_m].pos, R_);
     matched_ = best_j;
     miss_    = 0;
     return best_j;
 
+}
+
+
+void ArmorTracker::pushNis(bool ok)
+{
+    nisWin_.push_back(ok);
+    while (static_cast<int>(nisWin_.size()) > kWindow) nisWin_.pop_front();
+}
+
+
+bool ArmorTracker::badConverge() const
+{
+    if(static_cast<int>(nisWin_.size()) < kMinForJudge) //窗口太短不判断
+        return false;
+
+    int fails = 0;
+    for (bool ok : nisWin_) 
+        if (!ok) 
+            ++fails;
+
+    return fails >= kFailRatio * static_cast<double>(nisWin_.size());
+}
+
+
+bool ArmorTracker::tryReanchor(const std::vector<PlateMeas>& meas)
+{
+    if (meas.empty())
+        return false;
+
+    // 当前分支下，当前帧的最小 NIS
+    double bestNow = 1e18;
+    for (const auto& m : meas)
+        for (int j = 0; j < PLATE_NUM; ++j)
+        {
+            const double d2 = nis(j, m.pos);
+            if (d2 < bestNow) bestNow = d2;
+        }
+
+
+    const double cand[3] = { M_PI, M_PI/2.0, -M_PI/2.0 }; //候选朝向
+
+        double bestNew   = bestNow;
+    double bestShift = 0.0;
+    int    bestM = -1, bestJ = -1;
+    
+
+    //对另外三个朝向都试一下，看哪个好
+    for (int c = 0; c < 3; ++c)
+    {
+        ekf_.shiftTheta(cand[c]);
+
+        for (int m = 0; m < static_cast<int>(meas.size()); ++m)
+            for (int j = 0; j < PLATE_NUM; ++j)
+            {
+                const double d2 = nis(j, meas[m].pos);
+                if (d2 < bestNew) { bestNew = d2; bestShift = cand[c]; bestM = m; bestJ = j; }
+            }
+
+        ekf_.shiftTheta(-cand[c]);          
+    }
+
+    //都不够好就不切换
+    if (bestShift == 0.0)         return false;
+    if (bestNew > bestNow * 0.5)  return false;    
+    if (bestNew > gate_)          return false;
+
+    ekf_.shiftTheta(bestShift);
+    ekf_.correct(bestJ, meas[bestM].pos, R_);
+    matched_ = bestJ;
+    nisWin_.clear();                             
+
+    std::printf("  [tracker] 分支重收敛: theta %+.1f deg, NIS %.2f -> %.2f, board %d\n",
+                bestShift * 180.0 / M_PI, bestNow, bestNew, bestJ);
+    return true;
 }

@@ -117,6 +117,12 @@ void Ekf::predict(double dt)
     x_ = F * x_;
     P_ = F * P_ * F.t() + Q;
 
+    while (x_.at<double>(THETA) >  M_PI) x_.at<double>(THETA) -= 2.0 * M_PI;
+    while (x_.at<double>(THETA) < -M_PI) x_.at<double>(THETA) += 2.0 * M_PI;
+
+
+    
+
     P_ = 0.5 * (P_ + P_.t());
 }
 
@@ -151,4 +157,20 @@ bool Ekf::correct(int j, const cv::Mat& z, const cv::Mat& R)
     P_ = 0.5 * (P_ + P_.t());
 
     return true;
+}
+
+
+// 把朝向平移 dtheta，并把朝向方差抬到至少 0.5，让后续观测能快速纠正
+void Ekf::shiftTheta(double dtheta)
+{
+    //平移
+    x_.at<double>(THETA) += dtheta;
+
+    //(-pi, pi]
+    while (x_.at<double>(THETA) >  M_PI) x_.at<double>(THETA) -= 2.0 * M_PI;
+    while (x_.at<double>(THETA) < -M_PI) x_.at<double>(THETA) += 2.0 * M_PI;
+
+    //放大朝向方差
+    const double cur = P_.at<double>(THETA, THETA);
+    if (cur < 0.5) P_.at<double>(THETA, THETA) = 0.5;
 }
