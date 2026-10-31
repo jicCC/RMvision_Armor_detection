@@ -113,6 +113,10 @@ void Ekf::predict(double dt)
 
     Q.at<double>(R_ARM, R_ARM) = 0.0; //给r加一个极小的噪声，使其可以微调修正（修改：不加任何噪声）
 
+    // 目标基本不平移：压低速度通道的过程噪声，避免把"自转"解释成"平移"
+    Q.at<double>(VX, VX) *= 0.01;
+    Q.at<double>(VY, VY) *= 0.01;
+
     //更新x_和P_
     x_ = F * x_;
     P_ = F * P_ * F.t() + Q;

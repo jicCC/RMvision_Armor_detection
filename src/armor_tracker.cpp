@@ -41,9 +41,13 @@ int ArmorTracker::update(const std::vector<PlateMeas>& meas, double t)
         if (meas.empty()) return -1;
 
         const cv::Mat& p = meas[0].pos;
-        // 把这次观测当成"板 0"，θ 先猜 0，靠后续观测修正
+
+        // 若有观测反解的方位角，就用它初始化（init 内部假设这是板 0，φ=0，
+        // 故可直接传入 θ_j）；否则退回猜 0
+        const double th0 = meas[0].hasTheta ? meas[0].thetaMeas : 0.0;
+
         ekf_.init(p.at<double>(0), p.at<double>(1), p.at<double>(2),
-                  0.0, PLATE_RADIUS, 0.10);
+                  th0, PLATE_RADIUS, 0.10);
 
         inited_  = true;
         last_t_  = t;

@@ -220,11 +220,13 @@ static void drawArmorBoxes(cv::Mat& img,
                                                  : cv::Scalar(90, 90, 90);
         const int thick = (j == jMatched) ? (BOX_THICK + 1) : BOX_THICK;
 
-         if (j == jMatched && g_dbgBox)
+        if (j == jMatched && g_dbgBox)
         {
-            printf("       [预测] 宽=%.0f 高=%.0f\n",
+            printf("       [预测] 宽=%.0f 高=%.0f  中心=(%.0f,%.0f)\n",
                    cv::norm(cv::Point2f(pts[1] - pts[0])),
-                   cv::norm(cv::Point2f(pts[2] - pts[1])));
+                   cv::norm(cv::Point2f(pts[2] - pts[1])),
+                   (pts[0].x + pts[2].x) * 0.5f,
+                   (pts[0].y + pts[2].y) * 0.5f);
         }
 
         // 板中心在相机系下的方向
@@ -322,9 +324,34 @@ int main()
         //5.4 转为世界系+喂给tracker
         const double t = imu.stampOf(idx); //时间戳
         std::vector<PlateMeas> ms; //观测容器
+        // 由 rvec 反解板的方位角 θ_j（用于初始化）
+        double thjMeas = 0.0;
+        bool   hasThj  = false;
+
+        if (pr.ok)
+        {
+            cv::Mat R_pc;
+            cv::Rodrigues(pr.rvec, R_pc);
+            const cv::Mat nCam = R_pc.col(2);
+            const cv::Mat R_wc = imu.rotationAt(t, 0) * ImuBuffer::camToBody(0);
+            const cv::Mat nW   = R_wc * nCam;
+
+            const double nx = nW.at<double>(0);
+            const double ny = nW.at<double>(1);
+
+            if (std::sqrt(nx * nx + ny * ny) > 1e-6)
+            {
+                thjMeas = std::atan2(-ny, -nx);
+                hasThj  = true;
+            }
+        }
+
+
         if (pr.ok)
         {
             PlateMeas m;
+            m.thetaMeas = thjMeas;
+            m.hasTheta  = hasThj;
             m.pos   = imu.camToWorld(pr.tvec, t, 0, 0);
             m.digit = (best >= 0) ? dets[best].cls   : -1;
             m.score = (best >= 0) ? dets[best].score : 0.0f;
@@ -336,8 +363,9 @@ int main()
         if (g_dbgBox && pr.ok && j >= 0)
         {
             const auto& K4 = dets[best].kpt;
-            printf("帧%4d [检测] 宽=%.0f 高=%.0f  j=%d\n",
-                   idx, cv::norm(K4[1] - K4[0]), cv::norm(K4[2] - K4[1]), j);
+            printf("帧%4d [检测] 宽=%.0f 高=%.0f  中心=(%.0f,%.0f)  j=%d\n",
+                   idx, cv::norm(K4[1] - K4[0]), cv::norm(K4[2] - K4[1]),
+                   (K4[0].x + K4[2].x) * 0.5f, (K4[0].y + K4[2].y) * 0.5f, j);
         }
 
         if (fcsv)

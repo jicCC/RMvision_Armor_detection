@@ -10,6 +10,8 @@ struct PlateMeas
     cv::Mat pos;        
     int     digit{0};
     double  score{0.0};
+    double  thetaMeas{0.0};      //由观测反解的板方位角 θ_j
+    bool    hasTheta{false};    
 };
 
 class ArmorTracker
