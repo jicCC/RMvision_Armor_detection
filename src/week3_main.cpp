@@ -6,14 +6,22 @@
 #include <opencv2/opencv.hpp>      
 #include <cstdio>                   
 #include <vector>                   
-#include <string>            
+#include <string>        
+#include <cmath>     
+
+static bool g_dbgBox = false;      // 这一帧是否打印预测框
 
 
+constexpr int LINE_THICK = 2;
+constexpr int BOX_THICK = 2;      // 重投影框的线宽
 
 constexpr double VID_FX = 2362.2795952460974;
 constexpr double VID_FY = 2336.1916035376717;
 constexpr double VID_CX = 679.17513921636382;
 constexpr double VID_CY = 529.06858905837635;
+
+constexpr double ARMOR_HALF_W = 0.0675;    
+constexpr double ARMOR_HALF_H = 0.0275;    
 
 //在视频右上角显示当前状态量
 static void drawHud(cv::Mat& img, const Ekf& ekf, int j)
@@ -98,6 +106,133 @@ static void drawArmorCenters(cv::Mat& img, const Ekf& ekf,
     }
 }
 
+//算四个角点
+static void plateCorners(const Ekf& ekf,
+                         int j,
+                         double thetaUse,
+                         std::vector<cv::Point3d>& out)
+{
+    out.clear();
+
+    const double thj = thetaUse + PLATE_PHI[j];
+
+    const cv::Mat st = ekf.state();
+
+
+    double cj = std::cos(thj);
+    double sj = std::sin(thj);
+
+
+    //算板中心
+    const cv::Mat P = ekf.h(j, st);
+    const double Px = P.at<double>(0);
+    const double Py = P.at<double>(1);
+    const double Pz = P.at<double>(2);
+
+    //三个偏移量
+    const double dx = ARMOR_HALF_W * sj;    
+    const double dy = ARMOR_HALF_W * cj;
+    const double dz = ARMOR_HALF_H;
+
+
+    //算四个角点
+    out.push_back(cv::Point3d(Px - dx, Py + dy, Pz + dz));  
+    out.push_back(cv::Point3d(Px + dx, Py - dy, Pz + dz));  
+    out.push_back(cv::Point3d(Px + dx, Py - dy, Pz - dz));  
+    out.push_back(cv::Point3d(Px - dx, Py + dy, Pz - dz));  
+
+
+}
+
+
+//画框
+static void drawArmorBoxes(cv::Mat& img,
+                           const Ekf& ekf,
+                           const ImuBuffer& imu,
+                           double t,
+                           int jMatched,
+                           const cv::Mat& rvecMeas)
+{   
+    //转化参考系：世界系到相机系的旋转矩阵
+    cv::Mat R_cw = (imu.rotationAt(t, 0) * ImuBuffer::camToBody(0)).t();
+
+    // 默认用 EKF 估计的 θ
+    double thUse = ekf.state().at<double>(THETA);
+
+    // 如果这一帧有 PnP 结果，就用板的真实法线反解 θ
+    if (!rvecMeas.empty() && jMatched >= 0)
+    {
+        cv::Mat R_pc;
+        cv::Rodrigues(rvecMeas, R_pc);                          // 物体系 -> 相机系
+        const cv::Mat nCam = R_pc.col(2);                       // 板法线（相机系）
+        const cv::Mat R_wc = imu.rotationAt(t, 0) * ImuBuffer::camToBody(0);  // 相机 -> 世界（不转置）
+        const cv::Mat nW   = R_wc * nCam;                       // 板法线（世界系）
+
+        const double nx = nW.at<double>(0);
+        const double ny = nW.at<double>(1);
+
+        if (std::sqrt(nx * nx + ny * ny) > 1e-6)                // 防止法线接近竖直
+            thUse = std::atan2(-ny, -nx) - PLATE_PHI[jMatched];
+    }
+
+    std::vector<cv::Point3d> corners;
+
+    for(int j = 0; j < PLATE_NUM; ++j)
+    {
+
+        plateCorners(ekf, j, thUse, corners);
+
+        std::vector<cv::Point> pts;
+        bool ok = true;
+
+        for (const cv::Point3d& c3d : corners)
+        {
+            const cv::Mat p3 = (cv::Mat_<double>(3, 1) << c3d.x, c3d.y, c3d.z);
+
+            const cv::Mat pc = R_cw * p3; //世界系转化到相机系
+
+            //取出三个分量
+            const double Xc = pc.at<double>(0);
+            const double Yc = pc.at<double>(1);
+            const double Zc = pc.at<double>(2);
+
+            if (Zc <= 0.1) { ok = false; break; } //处理非正深度异常
+
+            //重投影
+            const int px = cvRound(VID_FX * Xc / Zc + VID_CX);
+            const int py = cvRound(VID_FY * Yc / Zc + VID_CY);
+
+            //图像边界检查：有一个点跳出屏幕外了就不画框
+            if (px < 0 || px >= img.cols || py < 0 || py >= img.rows)
+            { 
+                ok = false; 
+                break; 
+            }
+
+            pts.push_back(cv::Point(px, py));
+        }
+
+        if (!ok || pts.size() != 4) //写pts.size() != 4的原因：防御性编程，防止被改内层循环逻辑
+            continue;
+
+        //画框
+        const cv::Scalar color = (j == jMatched) ? cv::Scalar(0, 255, 0)
+                                                 : cv::Scalar(90, 90, 90);
+        const int thick = (j == jMatched) ? (BOX_THICK + 1) : BOX_THICK;
+
+         if (j == jMatched && g_dbgBox)
+        {
+            printf("       [预测] 宽=%.0f 高=%.0f\n",
+                   cv::norm(cv::Point2f(pts[1] - pts[0])),
+                   cv::norm(cv::Point2f(pts[2] - pts[1])));
+        }
+
+        // 板中心在相机系下的方向
+        //printf("       视线=(%.2f,%.2f,%.2f)  Zc=%.2f\n", Xc, Yc, Zc);
+
+        cv::polylines(img, pts, true, color, thick, cv::LINE_AA);
+    }
+}
 
 int main()
 {
@@ -197,6 +332,14 @@ int main()
         }
         const int j = tracker.update(ms, t); //喂给Tracker
 
+        g_dbgBox = (idx % 25 == 0);
+        if (g_dbgBox && pr.ok && j >= 0)
+        {
+            const auto& K4 = dets[best].kpt;
+            printf("帧%4d [检测] 宽=%.0f 高=%.0f  j=%d\n",
+                   idx, cv::norm(K4[1] - K4[0]), cv::norm(K4[2] - K4[1]), j);
+        }
+
         if (fcsv)
         {
             if (pr.ok)
@@ -248,7 +391,10 @@ int main()
         drawHud(frame, tracker.ekf(), j);
 
         if (tracker.inited())
-             drawArmorCenters(frame, tracker.ekf(), imu, t, j);
+        {
+            drawArmorBoxes(frame, tracker.ekf(), imu, t, j, pr.ok ? pr.rvec : cv::Mat());
+            //drawArmorCenters(frame, tracker.ekf(), imu, t, j);
+        }
 
         writer.write(frame);
         ++idx;
