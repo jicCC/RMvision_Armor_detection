@@ -69,8 +69,8 @@ axes[2][2].set_ylim(0.24, 0.26)
 
 # ---- armor height 子图：模型预测 vs 原始观测 ----------
 axes[0][2].plot(t, pred_z, lw=0.9, alpha=0.85, color="tab:red", label="model: z_a + dh")
-axes[0][2].plot(t, rz,     lw=0.5, alpha=0.40, color="gray",   label="measurement")
-axes[0][2].legend(fontsize=7, loc="lower right")
+#axes[0][2].plot(t, rz,     lw=0.5, alpha=0.40, color="gray",   label="measurement")
+#axes[0][2].legend(fontsize=7, loc="lower right")
 
 # ---- z 通道残差统计 ----------
 res = pred_z - rz
@@ -78,17 +78,17 @@ rms = np.sqrt(np.mean(res ** 2))
 print(f"z channel: RMS residual = {rms*100:.2f} cm, max = {np.max(np.abs(res))*100:.2f} cm")
 
 # ---- 单独的残差图 ----------
-fig2, ax2 = plt.subplots(figsize=(10, 3))
-ax2.plot(t, res * 100.0, lw=0.7, color="tab:purple")
-ax2.axhline(0.0, color="k", lw=0.5)
-ax2.set_xlabel("t [s]")
-ax2.set_ylabel("residual [cm]")
-ax2.set_title("z residual:  (z_a + dh[matched]) - measurement")
-ax2.grid(alpha=0.3)
+#fig2, ax2 = plt.subplots(figsize=(10, 3))
+#ax2.plot(t, res * 100.0, lw=0.7, color="tab:purple")
+#ax2.axhline(0.0, color="k", lw=0.5)
+#ax2.set_xlabel("t [s]")
+#ax2.set_ylabel("residual [cm]")
+#ax2.set_title("z residual:  (z_a + dh[matched]) - measurement")
+#ax2.grid(alpha=0.3)
 
-fig2.tight_layout()
-fig2.savefig("z_residual.png", dpi=130)
-print("saved z_residual.png")
+#fig2.tight_layout()
+#fig2.savefig("z_residual.png", dpi=130)
+#print("saved z_residual.png")
 
 fig.tight_layout()
 fig.savefig("states.png", dpi=130)

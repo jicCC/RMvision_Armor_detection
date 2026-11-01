@@ -9,8 +9,6 @@
 #include <string>        
 #include <cmath>     
 
-static bool g_dbgBox = false;      // 这一帧是否打印预测框
-
 
 constexpr int LINE_THICK = 2;
 constexpr int BOX_THICK = 2;      // 重投影框的线宽
@@ -78,33 +76,6 @@ static void drawHud(cv::Mat& img, const Ekf& ekf, int j)
 
 
 
-static void drawArmorCenters(cv::Mat& img, const Ekf& ekf,
-                             const ImuBuffer& imu, double t, int jMatched)
-{
-    cv::Mat R_cw = (imu.rotationAt(t, 0) * ImuBuffer::camToBody(0)).t();
-    const cv::Mat s = ekf.state();
-    for (int j = 0; j < PLATE_NUM; ++j)
-    {
-        cv::Mat pw = ekf.h(j, s);
-        cv::Mat pc = R_cw * pw;
-        const double Xc = pc.at<double>(0);
-        const double Yc = pc.at<double>(1);
-        const double Zc = pc.at<double>(2);
-
-
-        if (Zc <= 0.1) continue;
-
-        const int u = cvRound(VID_FX*Xc/Zc + VID_CX);
-        const int v = cvRound(VID_FY*Yc/Zc + VID_CY);
-
-        const cv::Scalar color = (j == jMatched)
-                                 ? cv::Scalar(0, 255, 0)     // 当前匹配：绿
-                                 : cv::Scalar(0, 165, 255);  // 其余：橙
-
-        if (u < 0 || u >= img.cols || v < 0 || v >= img.rows) continue; //投影点必须在图像内
-        cv::circle(img, cv::Point(u,v), 4, color, -1);
-    }
-}
 
 //算四个角点
 static void plateCorners(const Ekf& ekf,
@@ -220,18 +191,6 @@ static void drawArmorBoxes(cv::Mat& img,
                                                  : cv::Scalar(90, 90, 90);
         const int thick = (j == jMatched) ? (BOX_THICK + 1) : BOX_THICK;
 
-        if (j == jMatched && g_dbgBox)
-        {
-            printf("       [预测] 宽=%.0f 高=%.0f  中心=(%.0f,%.0f)\n",
-                   cv::norm(cv::Point2f(pts[1] - pts[0])),
-                   cv::norm(cv::Point2f(pts[2] - pts[1])),
-                   (pts[0].x + pts[2].x) * 0.5f,
-                   (pts[0].y + pts[2].y) * 0.5f);
-        }
-
-        // 板中心在相机系下的方向
-        //printf("       视线=(%.2f,%.2f,%.2f)  Zc=%.2f\n", Xc, Yc, Zc);
-
         cv::polylines(img, pts, true, color, thick, cv::LINE_AA);
     }
 }
@@ -278,6 +237,12 @@ int main()
     //打开meas.csv
     FILE* fcsv = std::fopen("meas.csv", "w");
     if (fcsv) std::fprintf(fcsv, "frame,x,y,z,ok\n");
+
+    // 状态导出（供 plot_states.py 使用，列格式与 ekf_test 一致）
+    FILE* fstate = std::fopen("state.csv", "w");
+    if (fstate)
+        std::fprintf(fstate,
+            "frame,t,cx,vx,cy,vy,za,vz,theta,omega,r,matched,P_cx,P_cy,P_theta,raw_z\n");
 
     //5.对每一帧识别解算并预测画框
     while (cap.read(frame))
@@ -359,14 +324,26 @@ int main()
         }
         const int j = tracker.update(ms, t); //喂给Tracker
 
-        g_dbgBox = (idx % 25 == 0);
-        if (g_dbgBox && pr.ok && j >= 0)
+        if (fstate)
         {
-            const auto& K4 = dets[best].kpt;
-            printf("帧%4d [检测] 宽=%.0f 高=%.0f  中心=(%.0f,%.0f)  j=%d\n",
-                   idx, cv::norm(K4[1] - K4[0]), cv::norm(K4[2] - K4[1]),
-                   (K4[0].x + K4[2].x) * 0.5f, (K4[0].y + K4[2].y) * 0.5f, j);
+            const cv::Mat sx = tracker.ekf().state();
+            const cv::Mat Px = tracker.ekf().cov();
+            std::fprintf(fstate,
+                "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%d,%.6e,%.6e,%.6e,%.6f\n",
+                idx, t,
+                sx.at<double>(CX), sx.at<double>(VX),
+                sx.at<double>(CY), sx.at<double>(VY),
+                sx.at<double>(ZA), sx.at<double>(VZ),
+                sx.at<double>(THETA), sx.at<double>(OMEGA),
+                sx.at<double>(R_ARM),
+                j,
+                Px.at<double>(CX, CX),
+                Px.at<double>(CY, CY),
+                Px.at<double>(THETA, THETA),
+                pr.ok ? pr.tvec.at<double>(2) : 0.0);
         }
+
 
         if (fcsv)
         {
@@ -395,16 +372,6 @@ int main()
         }
 
 
-        //临时打印
-        if (idx < 3 && pr.ok)
-        {
-        const cv::Mat pw = imu.camToWorld(pr.tvec, t, 0, 0);
-        printf("  帧%d  tvec=(%.3f,%.3f,%.3f)  world=(%.3f,%.3f,%.3f)\n",
-               idx,
-               pr.tvec.at<double>(0), pr.tvec.at<double>(1), pr.tvec.at<double>(2),
-               pw.at<double>(0),     pw.at<double>(1),     pw.at<double>(2));
-        }
-
         //5.6 打印
         if (idx % 50 == 0)
         {
@@ -421,7 +388,6 @@ int main()
         if (tracker.inited())
         {
             drawArmorBoxes(frame, tracker.ekf(), imu, t, j, pr.ok ? pr.rvec : cv::Mat());
-            //drawArmorCenters(frame, tracker.ekf(), imu, t, j);
         }
 
         writer.write(frame);
@@ -430,6 +396,8 @@ int main()
 
 
     if (fcsv) std::fclose(fcsv);
+
+    if (fstate) std::fclose(fstate);
 
     
     cap.release();

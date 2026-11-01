@@ -125,3 +125,27 @@ TraditionalDetector trad_vid(false, "data/mlp.onnx");   // false = 红方（视�
 ```
 
 
+---
+
+## 第三周：整车状态 EKF 估计与装甲板重投影
+
+在第二周的检测与 PnP 基础上，新增了以整车 9 维状态为对象的 EKF，
+并实现了装甲板匹配、跳变处理与四块板的重投影绘制。
+
+### 新增文件
+
+| 文件 | 内容 |
+|---|---|
+| `include/ekf.hpp`、`src/ekf.cpp` | 9 维 EKF：观测函数 h、雅可比 H、predict / correct |
+| `include/imu.hpp`、`src/imu.cpp` | IMU 姿态插值、相机↔机身↔世界坐标变换 |
+| `include/armor_tracker.hpp`、`src/armor_tracker.cpp` | 匹配、NIS 门限、发散判定、分支重收敛 |
+| `src/ekf_test.cpp` | 离线验证（11 项）与 state.csv 导出 |
+| `src/week3_main.cpp` | 在线主程序：HUD + 四块板重投影 + 视频输出 |
+| `plot_states.py` | 9 条状态曲线（含 ±3σ）与 z 通道残差 |
+
+### 构建
+
+```bash
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j$(nproc)
