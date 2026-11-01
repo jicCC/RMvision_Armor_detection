@@ -8,8 +8,32 @@ find_package(OpenVINO REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
-add_executable(test_opencv src/main.cpp   src/yolo_detector.cpp   src/pnp_solver.cpp  
-               src/traditional_detector.cpp)
+add_executable(test_opencv
+    src/main.cpp
+    src/yolo_detector.cpp
+    src/pnp_solver.cpp
+    src/traditional_detector.cpp)
 
 target_link_libraries(test_opencv ${OpenCV_LIBS})
 target_link_libraries(test_opencv openvino::runtime)
+
+
+add_executable(ekf_test
+    src/ekf_test.cpp
+    src/ekf.cpp
+    src/imu.cpp
+    src/armor_tracker.cpp)
+
+add_executable(week3
+    src/week3_main.cpp
+    src/ekf.cpp
+    src/imu.cpp
+    src/armor_tracker.cpp
+    src/yolo_detector.cpp
+    src/pnp_solver.cpp)
+
+target_link_libraries(week3
+    ${OpenCV_LIBS}
+    openvino::runtime)
+
+target_link_libraries(ekf_test ${OpenCV_LIBS})
